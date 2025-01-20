@@ -1,11 +1,21 @@
-from pydantic_ai import Agent
-from models.specifications import WebSpecification, EvaluationResult
+from __future__ import annotations
+from pydantic_ai import Agent, RunContext
+from models.specifications import (
+    VersionedWebSpecification,
+    EvaluationResult,
+    EvaluationCriteria,
+    DependencyContext,
+    ModificationType
+)
+from utils.context_manager import ContextManager
+from typing import Optional
 import json
 from utils.logging_config import get_logger
 
 class Evaluator(Agent):
-    def __init__(self, model="claude-3-haiku-20240307"):
+    def __init__(self, model="claude-3-haiku-20240307", context_manager: Optional[ContextManager] = None):
         super().__init__(model, result_type=EvaluationResult)
+        self.context_manager = context_manager or ContextManager()
         self.logger = get_logger("Evaluator")
         self.logger.info("Initialisation de l'agent Evaluator")
         self.system_prompt = """
@@ -21,13 +31,15 @@ class Evaluator(Agent):
         
         Le score final doit être entre 0.0 et 1.0
         """
+        
+        # Enregistrement de l'outil evaluate_specification
+        self.tool(self.evaluate_specification)
     
-    @Agent.tool()
-    def evaluate_specification(self, spec: WebSpecification, context: str) -> EvaluationResult:
+    def evaluate_specification(self, spec: VersionedWebSpecification, context: RunContext[str]) -> EvaluationResult:
         """Évalue le cahier des charges par rapport au contexte initial."""
         prompt = f"""
         Contexte initial du projet :
-        {context}
+        {context.value}
         
         Spécifications à évaluer :
         {json.dumps(spec.model_dump(), indent=2, ensure_ascii=False)}
@@ -56,8 +68,23 @@ class Evaluator(Agent):
         
         Format de sortie attendu :
         {{
-            "score": 0.85,  # Score entre 0.0 et 1.0
-            "feedback": "Feedback détaillé avec points forts et axes d'amélioration"
+            "criteria": {{
+                "completeness": 85.0,  # Score entre 0 et 100
+                "coherence": 90.0,
+                "feasibility": 75.0,
+                "clarity": 80.0
+            }},
+            "total_score": 0.85,  # Moyenne pondérée des critères
+            "feedback": {{
+                "strengths": ["Point fort 1", "Point fort 2"],
+                "weaknesses": ["Point faible 1", "Point faible 2"],
+                "technical": ["Commentaire technique 1", "Commentaire technique 2"],
+                "functional": ["Commentaire fonctionnel 1", "Commentaire fonctionnel 2"]
+            }},
+            "improvement_suggestions": [
+                "Suggestion d'amélioration 1",
+                "Suggestion d'amélioration 2"
+            ]
         }}
         """
         
@@ -71,13 +98,48 @@ class Evaluator(Agent):
             # Conversion de la réponse en dictionnaire
             eval_dict = json.loads(response)
             
-            # Validation du score
-            if not 0 <= eval_dict["score"] <= 1:
-                raise ValueError("Le score doit être entre 0.0 et 1.0")
+            # Validation des scores
+            if not all(0 <= score <= 100 for score in eval_dict["criteria"].values()):
+                raise ValueError("Les scores des critères doivent être entre 0 et 100")
+            if not 0 <= eval_dict["total_score"] <= 1:
+                raise ValueError("Le score total doit être entre 0.0 et 1.0")
             
             # Création de l'objet EvaluationResult
-            result = EvaluationResult(**eval_dict)
-            self.logger.info(f"Évaluation terminée avec un score de {result.score}")
+            result = EvaluationResult(
+                specification_version=spec.metadata.version_id,
+                criteria=EvaluationCriteria(**eval_dict["criteria"]),
+                total_score=eval_dict["total_score"],
+                feedback=eval_dict["feedback"],
+                evaluator_name="Evaluator",
+                improvement_suggestions=eval_dict["improvement_suggestions"]
+            )
+            
+            # Enregistrement du résultat dans le ContextManager
+            self.context_manager.store_specification_version(
+                specification_data=result.dict(),
+                agent_name="Evaluator",
+                action_type="evaluation",
+                parent_id=spec.metadata.version_id
+            )
+            
+            # Enregistrement de la dépendance avec l'Optimizer si le score est inférieur à 0.9
+            if result.total_score < 0.9:
+                self.context_manager.register_agent_dependency(
+                    source_agent="Evaluator",
+                    target_agent="Optimizer",
+                    context_data=DependencyContext(
+                        source_version_id=spec.metadata.version_id,
+                        target_agent="Optimizer",
+                        context_type="optimization_request",
+                        data={
+                            "specification_id": spec.metadata.version_id,
+                            "evaluation_feedback": result.dict()
+                        },
+                        priority=2
+                    ).dict()
+                )
+            
+            self.logger.info(f"Évaluation terminée avec un score de {result.total_score}")
             return result
             
         except Exception as e:
