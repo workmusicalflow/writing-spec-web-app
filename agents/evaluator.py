@@ -14,7 +14,11 @@ from utils.logging_config import get_logger
 
 class Evaluator(Agent):
     def __init__(self, model="claude-3-haiku-20240307", context_manager: Optional[ContextManager] = None):
-        super().__init__(model, result_type=EvaluationResult)
+        super().__init__(
+            model,
+            result_type=EvaluationResult,
+            deps_type=str
+        )
         self.context_manager = context_manager or ContextManager()
         self.logger = get_logger("Evaluator")
         self.logger.info("Initialisation de l'agent Evaluator")

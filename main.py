@@ -60,24 +60,23 @@ Score après optimisation : {optimization.optimization_score:.2f}
 {"".join(changes)}
 """
 
-def generate_specification(user_input: str) -> Tuple[str, str, str]:
+async def generate_specification(user_input: str) -> Tuple[str, str, str]:
     """Génère et optimise les spécifications avec retour détaillé."""
     # Stockage du contexte utilisateur
     context_manager.set_user_input(user_input)
     context = context_manager.get_user_input()
     
     # Génération des spécifications initiales
-    run_context = RunContext[str](context)
-    spec = writer.write_specification(run_context)
+    spec = await writer.run_sync(writer.write_specification, deps=context)
     
     # Évaluation des spécifications
-    evaluation = evaluator.evaluate_specification(run_context, spec)
+    evaluation = await evaluator.run_sync(evaluator.evaluate_specification, deps=context, spec=spec)
     eval_text = format_evaluation_result(evaluation)
     
     # Optimisation si nécessaire
     optimization = None
     if evaluation.total_score < 0.9:
-        optimization = optimizer.optimize_specification(run_context, spec, evaluation)
+        optimization = await optimizer.run_sync(optimizer.optimize_specification, deps=context, spec=spec, evaluation=evaluation)
         opt_text = format_optimization_changes(optimization)
         final_spec = optimization.improved_specification
     else:
@@ -119,4 +118,4 @@ iface = gr.Interface(
 )
 
 if __name__ == "__main__":
-    iface.launch()
+    iface.queue().launch()
