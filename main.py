@@ -67,7 +67,7 @@ def generate_specification(user_input: str) -> Tuple[str, str, str]:
     context = context_manager.get_user_input()
     
     # Génération des spécifications initiales
-    run_context = RunContext(value=context)
+    run_context = RunContext[str](context)
     spec = writer.write_specification(run_context)
     
     # Évaluation des spécifications
