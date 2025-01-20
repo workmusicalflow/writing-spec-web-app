@@ -1,121 +1,112 @@
 import gradio as gr
-import json
-from agents.specification_writer import SpecificationWriter
-from agents.evaluator import Evaluator
-from agents.optimizer import Optimizer
-from utils.context_manager import ContextManager
-from pydantic_ai import RunContext
-from typing import Dict, Any, Tuple
+from utils.anthropic_client import AnthropicClient
 
-# Initialisation du ContextManager partagé
-context_manager = ContextManager()
+# Initialisation du client Anthropic
+client = AnthropicClient()
 
-# Initialisation des agents avec le même ContextManager
-writer = SpecificationWriter(context_manager=context_manager)
-evaluator = Evaluator(context_manager=context_manager)
-optimizer = Optimizer(context_manager=context_manager)
+def process_specification(
+    title: str,
+    description: str,
+    requirements: str,
+    constraints: str
+) -> str:
+    """Traite une spécification avec Claude."""
+    try:
+        # Création du prompt
+        prompt = f"""
+Vous êtes un expert en rédaction de spécifications techniques.
+Voici une spécification à évaluer et optimiser :
 
-def format_evaluation_result(evaluation) -> str:
-    """Formate le résultat de l'évaluation pour l'affichage."""
-    return f"""
-### Scores d'évaluation
+Titre : {title}
+Description : {description}
+Exigences : {requirements}
+Contraintes : {constraints}
 
-- Score total : {evaluation.total_score:.2f}
-- Complétude : {evaluation.criteria.completeness:.1f}/100
-- Cohérence : {evaluation.criteria.coherence:.1f}/100
-- Faisabilité : {evaluation.criteria.feasibility:.1f}/100
-- Clarté : {evaluation.criteria.clarity:.1f}/100
-
-### Points forts
-{chr(10).join(f"- {point}" for point in evaluation.feedback["strengths"])}
-
-### Points à améliorer
-{chr(10).join(f"- {point}" for point in evaluation.feedback["weaknesses"])}
-
-### Aspects techniques
-{chr(10).join(f"- {point}" for point in evaluation.feedback["technical"])}
-
-### Aspects fonctionnels
-{chr(10).join(f"- {point}" for point in evaluation.feedback["functional"])}
+1. Évaluez cette spécification sur 10 points
+2. Identifiez 3 points forts
+3. Identifiez 3 points à améliorer
+4. Proposez une version améliorée
 """
 
-def format_optimization_changes(optimization) -> str:
-    """Formate les changements d'optimisation pour l'affichage."""
-    if not optimization:
-        return "Aucune optimisation nécessaire"
-    
-    changes = [
-        f"### Modification {i+1}\n"
-        f"- Champ : {change.field_path}\n"
-        f"- Avant : {change.previous_value}\n"
-        f"- Après : {change.new_value}\n"
-        f"- Raison : {change.reason}\n"
-        for i, change in enumerate(optimization.changes_made)
-    ]
-    return f"""
-## Optimisations effectuées
-
-Score après optimisation : {optimization.optimization_score:.2f}
-
-{"".join(changes)}
-"""
-
-async def generate_specification(user_input: str) -> Tuple[str, str, str]:
-    """Génère et optimise les spécifications avec retour détaillé."""
-    # Stockage du contexte utilisateur
-    context_manager.set_user_input(user_input)
-    context = context_manager.get_user_input()
-    
-    # Génération des spécifications initiales
-    spec = await writer.run("write_specification", deps=context)
-    
-    # Évaluation des spécifications
-    evaluation = await evaluator.run("evaluate_specification", deps=context, spec=spec)
-    eval_text = format_evaluation_result(evaluation)
-    
-    # Optimisation si nécessaire
-    optimization = None
-    if evaluation.total_score < 0.9:
-        optimization = await optimizer.run("optimize_specification", deps=context, spec=spec, evaluation=evaluation)
-        opt_text = format_optimization_changes(optimization)
-        final_spec = optimization.improved_specification
-    else:
-        opt_text = "Aucune optimisation nécessaire (score > 0.9)"
-        final_spec = spec
-    
-    # Formatage du résultat final
-    spec_json = json.dumps(
-        final_spec.model_dump(exclude={"metadata"}),
-        indent=2,
-        ensure_ascii=False
-    )
-    
-    return spec_json, eval_text, opt_text
-
-# Interface Gradio
-iface = gr.Interface(
-    fn=generate_specification,
-    inputs=[
-        gr.Textbox(
-            lines=10,
-            label="Description du projet",
-            placeholder="Décrivez votre projet web en détail..."
+        # Appel à l'API Anthropic
+        response = client.generate(
+            prompt=prompt,
+            system_prompt="Vous êtes un expert en spécifications techniques. Fournissez des réponses structurées en Markdown.",
+            model="claude-3-5-sonnet-20241022"
         )
-    ],
-    outputs=[
-        gr.JSON(label="Cahier des charges"),
-        gr.Markdown(label="Évaluation"),
-        gr.Markdown(label="Optimisations")
-    ],
-    title="Générateur de cahier des charges pour applications web",
-    description="""
-    Entrez les détails de votre projet web pour obtenir un cahier des charges optimisé.
-    Le système analysera votre demande, générera des spécifications détaillées,
-    les évaluera selon plusieurs critères et les optimisera si nécessaire.
-    """,
-    allow_flagging="never",
-    theme="default"
-)
+
+        # Formatage des résultats
+        evaluation_text = f"""
+### Résultat de l'évaluation
+
+{response}
+"""
+        
+        return evaluation_text
+        
+    except Exception as e:
+        error_text = f"""
+### Erreur lors du traitement
+
+Une erreur s'est produite lors de l'analyse de votre spécification :
+- {str(e)}
+
+Veuillez vérifier vos entrées et réessayer.
+"""
+        return error_text
+
+# Création de l'interface Gradio
+with gr.Blocks(title="Évaluateur de Spécifications", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("""
+    # Évaluateur de Spécifications
+    
+    Cet outil vous aide à évaluer vos spécifications techniques.
+    Remplissez le formulaire ci-dessous pour commencer.
+    """)
+    
+    with gr.Row():
+        with gr.Column():
+            title_input = gr.Textbox(
+                label="Titre",
+                placeholder="Entrez le titre de votre spécification"
+            )
+            description_input = gr.Textbox(
+                label="Description",
+                placeholder="Décrivez votre projet en détail",
+                lines=5
+            )
+            requirements_input = gr.Textbox(
+                label="Exigences",
+                placeholder="Entrez une exigence par ligne",
+                lines=5
+            )
+            constraints_input = gr.Textbox(
+                label="Contraintes",
+                placeholder="Entrez une contrainte par ligne",
+                lines=5
+            )
+            submit_btn = gr.Button("Évaluer", variant="primary")
+        
+        with gr.Column():
+            evaluation_output = gr.Markdown(label="Résultats de l'Évaluation")
+            with gr.Accordion("Options", open=False):
+                copy_btn = gr.Button("📋 Copier les résultats", variant="secondary")
+                copy_btn.click(
+                    None,
+                    inputs=evaluation_output,
+                    js="(text) => navigator.clipboard.writeText(text)"
+                )
+    
+    submit_btn.click(
+        fn=process_specification,
+        inputs=[
+            title_input,
+            description_input,
+            requirements_input,
+            constraints_input
+        ],
+        outputs=evaluation_output
+    )
 
 if __name__ == "__main__":
-    iface.queue().launch()
+    demo.launch(show_api=False)
