@@ -67,16 +67,16 @@ async def generate_specification(user_input: str) -> Tuple[str, str, str]:
     context = context_manager.get_user_input()
     
     # Génération des spécifications initiales
-    spec = await writer.run_sync(writer.write_specification, deps=context)
+    spec = await writer.run(writer.write_specification, deps=context)
     
     # Évaluation des spécifications
-    evaluation = await evaluator.run_sync(evaluator.evaluate_specification, deps=context, spec=spec)
+    evaluation = await evaluator.run(evaluator.evaluate_specification, deps=context, spec=spec)
     eval_text = format_evaluation_result(evaluation)
     
     # Optimisation si nécessaire
     optimization = None
     if evaluation.total_score < 0.9:
-        optimization = await optimizer.run_sync(optimizer.optimize_specification, deps=context, spec=spec, evaluation=evaluation)
+        optimization = await optimizer.run(optimizer.optimize_specification, deps=context, spec=spec, evaluation=evaluation)
         opt_text = format_optimization_changes(optimization)
         final_spec = optimization.improved_specification
     else:
