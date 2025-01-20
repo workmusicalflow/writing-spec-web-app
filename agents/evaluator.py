@@ -35,7 +35,7 @@ class Evaluator(Agent):
         # Enregistrement de l'outil evaluate_specification
         self.tool(self.evaluate_specification)
     
-    def evaluate_specification(self, spec: VersionedWebSpecification, context: RunContext[str]) -> EvaluationResult:
+    def evaluate_specification(self, context: RunContext[str], spec: VersionedWebSpecification) -> EvaluationResult:
         """Évalue le cahier des charges par rapport au contexte initial."""
         prompt = f"""
         Contexte initial du projet :

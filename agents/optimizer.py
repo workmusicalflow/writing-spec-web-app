@@ -40,7 +40,7 @@ class Optimizer(Agent):
         # Enregistrement de l'outil optimize_specification
         self.tool(self.optimize_specification)
     
-    def optimize_specification(self, spec: VersionedWebSpecification, evaluation: EvaluationResult, context: RunContext[str]) -> OptimizationResult:
+    def optimize_specification(self, context: RunContext[str], spec: VersionedWebSpecification, evaluation: EvaluationResult) -> OptimizationResult:
         """Optimise le cahier des charges en fonction de l'évaluation et du contexte."""
         prompt = f"""
         Contexte initial du projet :

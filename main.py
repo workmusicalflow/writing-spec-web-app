@@ -71,13 +71,13 @@ def generate_specification(user_input: str) -> Tuple[str, str, str]:
     spec = writer.write_specification(run_context)
     
     # Évaluation des spécifications
-    evaluation = evaluator.evaluate_specification(spec, run_context)
+    evaluation = evaluator.evaluate_specification(run_context, spec)
     eval_text = format_evaluation_result(evaluation)
     
     # Optimisation si nécessaire
     optimization = None
     if evaluation.total_score < 0.9:
-        optimization = optimizer.optimize_specification(spec, evaluation, run_context)
+        optimization = optimizer.optimize_specification(run_context, spec, evaluation)
         opt_text = format_optimization_changes(optimization)
         final_spec = optimization.improved_specification
     else:
